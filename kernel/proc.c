@@ -124,6 +124,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->priority = 0;
+  p->boost = 1;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -453,6 +455,16 @@ scheduler(void)
     // turned off; enable them to avoid a deadlock if all
     // processes are waiting.
     intr_on();
+
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == RUNNABLE){
+        p->priority += p->boost;
+        if(p->priority >= 9)
+          p->boost = -1;
+        else if (p->priority <= 0)
+          p->boost = 1;
+      }
+    }
 
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
