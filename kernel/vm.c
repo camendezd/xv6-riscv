@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -448,4 +450,28 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int mprotect(void *addr, int len) {
+    struct proc *p = myproc();
+    pte_t *pte;
+    for (int i = 0; i < len; i += PGSIZE) {
+        pte = walk(p->pagetable, (uint64)(addr + i), 0);
+        if (pte == 0)
+            return -1; // dirección inválida
+        *pte &= ~PTE_W;  // Elimina el bit de escritura para hacerlo read-only
+    }
+    return 0;
+}
+
+int munprotect(void *addr, int len) {
+    struct proc *p = myproc();
+    pte_t *pte;
+    for (int i = 0; i < len; i += PGSIZE) {
+        pte = walk(p->pagetable, (uint64)(addr + i), 0);
+        if (pte == 0)
+            return -1;
+        *pte |= PTE_W;  // Activa el bit de escritura para permitir lectura/escritura
+    }
+    return 0;
 }
