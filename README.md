@@ -75,3 +75,5 @@ sys_chmod(void) {
 entry("chmod");
 
 ## Para finalizar, agregamos un archivo de prueba user/permtest.c como tambien test_chmod para verificar las segunda parte de la tarea y agregamos al makefile para que se compile correctamente
+
+Contenido en los archivos descritos y makefile se agrego linea $U/_test_chmod\
