@@ -328,6 +328,28 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+    
+    // Verificar si el archivo es inmutable
+    if(ip->permissions == 5 && ((omode & O_WRONLY) || (omode & O_RDWR))){
+      iunlockput(ip);
+      end_op();
+      return -1; // No se puede abrir un archivo inmutable en modo escritura
+    }
+
+    // Verificar permisos de escritura
+    if(((omode & O_WRONLY) || (omode & O_RDWR)) && !(ip->permissions & 2)){
+      iunlockput(ip);
+      end_op();
+      return -1; // No tiene permiso de escritura
+    }
+
+    // Verificar permisos de lectura
+    if(((omode & O_RDONLY) || (omode & O_RDWR)) && !(ip->permissions & 1)){
+      iunlockput(ip);
+      end_op();
+      return -1; // No tiene permiso de lectura
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -429,6 +451,35 @@ sys_chdir(void)
   end_op();
   p->cwd = ip;
   return 0;
+}
+
+uint64
+sys_chmod(void) {
+  char path[MAXPATH];
+  int mode;
+  struct inode *ip;
+
+  // Obtener argumentos: ruta y modo
+  if (argstr(0, path, MAXPATH) < 0 || argint(1, &mode) < 0)
+    return -1;
+
+  begin_op();
+  if ((ip = namei(path)) == 0) {
+    end_op();
+    return -1; // Archivo no encontrado
+  }
+
+  ilock(ip);
+  if (ip->permissions == 5) { // Verifica si es inmutable
+    iunlockput(ip);
+    end_op();
+    return -1; // No se pueden cambiar permisos de archivos inmutables
+  }
+
+  ip->permissions = mode; // Cambiar permisos
+  iunlockput(ip);
+  end_op();
+  return 0; // Éxito
 }
 
 uint64
