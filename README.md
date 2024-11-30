@@ -1,7 +1,7 @@
 Tarea 4 
 
 ## Primero agregamos un campo de permisos en la estructura del inode en kernel/fs.h
-int permissions;
+uint permissions;
 
 ## Agregamos ahora la inicializacion del campo permisions en fs.c
 dip->permissions = 3;
