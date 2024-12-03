@@ -9,6 +9,11 @@ struct sleeplock;
 struct stat;
 struct superblock;
 
+// Declaración del prototipo de send_message
+int send_message(int dest_pid, char *content);
+
+int receive_message(char *content);
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);

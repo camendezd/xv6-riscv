@@ -5,6 +5,9 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "user.h"
+
+int receive_message(char *content);
 
 uint64
 sys_exit(void)
@@ -91,3 +94,54 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64 
+sys_send(void) {
+    int dest_pid;
+    char content[128];  // Definir un buffer para el contenido del mensaje
+
+    // Obtener los argumentos: dest_pid (int) y content (char*)
+    if (argint(0, &dest_pid) < 0 || argstr(1, content, sizeof(content)) < 0)
+        return -1;
+
+    // Asegúrate de que la cola de mensajes no esté llena antes de enviar
+    acquire(&mqueue.lock);
+    if (mqueue.size >= MSG_QUEUE_SIZE) {
+        release(&mqueue.lock);
+        return -1;  // La cola está llena
+    }
+
+    // Insertar el mensaje en la cola
+    mqueue.messages[mqueue.tail].sender_pid = myproc()->pid;
+    strncpy(mqueue.messages[mqueue.tail].content, content, sizeof(content));
+    mqueue.tail = (mqueue.tail + 1) % MSG_QUEUE_SIZE;  // Actualizar la cola circular
+    mqueue.size++;
+    release(&mqueue.lock);
+    
+    return 0;  // Enviado exitosamente
+}
+
+uint64 
+sys_receive(void) {
+    message *msg;
+    
+    // Obtener el argumento: un puntero al buffer de mensaje
+    if (argptr(0, (void *)&msg, sizeof(*msg)) < 0)
+        return -1;
+
+    // Asegúrate de que la cola de mensajes no esté vacía
+    acquire(&mqueue.lock);
+    if (mqueue.size == 0) {
+        release(&mqueue.lock);
+        return -1;  // No hay mensajes
+    }
+
+    // Recibir el mensaje de la cola
+    *msg = mqueue.messages[mqueue.head];
+    mqueue.head = (mqueue.head + 1) % MSG_QUEUE_SIZE;  // Actualizar la cola circular
+    mqueue.size--;
+    release(&mqueue.lock);
+
+    return 0;  // Mensaje recibido exitosamente
+}
+

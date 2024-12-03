@@ -28,6 +28,12 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 
+// Estructura para mensajes (paso 1).
+typedef struct message {
+    int sender_pid;
+    char content[128];
+} message;
+
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
 // user page table. not specially mapped in the kernel page table.
@@ -105,3 +111,17 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
+
+// Definir el tamaño máximo de la cola de mensajes
+#define MSG_QUEUE_SIZE 64  // Tamaño máximo de la cola de mensajes
+
+// Estructura para la cola de mensajes
+typedef struct msg_queue {
+    message messages[MSG_QUEUE_SIZE];  // La cola que contiene los mensajes
+    int head;          // Índice del mensaje más antiguo
+    int tail;          // Índice del próximo mensaje a insertar
+    int size;          // Cantidad de mensajes en la cola
+    struct spinlock lock;  // Spinlock para acceso sincronizado
+} msg_queue;
+
+extern msg_queue mqueue;  // Declaración externa de la cola de mensajes

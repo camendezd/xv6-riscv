@@ -1,49 +1,207 @@
-xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
-Version 6 (v6).  xv6 loosely follows the structure and style of v6,
-but is implemented for a modern RISC-V multiprocessor using ANSI C.
+Tarea 5
 
-ACKNOWLEDGMENTS
+## Crear estructura de datos para mensajes 
 
-xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
-to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
-2000)).  See also https://pdos.csail.mit.edu/6.1810/, which provides
-pointers to on-line resources for v6.
+para esto definimos la estructura message (linea 31 proc.h)
+// Estructura para mensajes (paso 1).
+typedef struct message {
+    int sender_pid;
+    char content[128];
+} message;
 
-The following people have made contributions: Russ Cox (context switching,
-locking), Cliff Frey (MP), Xiao Yu (MP), Nickolai Zeldovich, and Austin
-Clements.
+## Implementar cola de mensajes global
 
-We are also grateful for the bug reports and patches contributed by
-Takahiro Aoyagi, Marcelo Arroyo, Silas Boyd-Wickizer, Anton Burtsev,
-carlclone, Ian Chen, Dan Cross, Cody Cutler, Mike CAT, Tej Chajed,
-Asami Doi,Wenyang Duan, eyalz800, Nelson Elhage, Saar Ettinger, Alice
-Ferrazzi, Nathaniel Filardo, flespark, Peter Froehlich, Yakir Goaron,
-Shivam Handa, Matt Harvey, Bryan Henry, jaichenhengjie, Jim Huang,
-Matúš Jókay, John Jolly, Alexander Kapshuk, Anders Kaseorg, kehao95,
-Wolfgang Keller, Jungwoo Kim, Jonathan Kimmitt, Eddie Kohler, Vadim
-Kolontsov, Austin Liew, l0stman, Pavan Maddamsetti, Imbar Marinescu,
-Yandong Mao, Matan Shabtay, Hitoshi Mitake, Carmi Merimovich, Mark
-Morrissey, mtasm, Joel Nider, Hayato Ohhashi, OptimisticSide,
-phosphagos, Harry Porter, Greg Price, RayAndrew, Jude Rich, segfault,
-Ayan Shafqat, Eldar Sehayek, Yongming Shen, Fumiya Shigemitsu, snoire,
-Taojie, Cam Tenny, tyfkda, Warren Toomey, Stephen Tu, Alissa Tung,
-Rafael Ubal, Amane Uehara, Pablo Ventura, Xi Wang, WaheedHafez,
-Keiichi Watanabe, Lucas Wolf, Nicolas Wolovick, wxdao, Grant Wu, x653,
-Jindong Zhang, Icenowy Zheng, ZhUyU1997, and Zou Chang Wei.
+definimos la estructura de cola en proc c:
 
-The code in the files that constitute xv6 is
-Copyright 2006-2024 Frans Kaashoek, Robert Morris, and Russ Cox.
+LINEA 9
+// Cola de mensajes global (paso 2)
+#define MSG_QUEUE_SIZE 64
 
-ERROR REPORTS
+typedef struct msg_queue {
+    message messages[MSG_QUEUE_SIZE];
+    int head;      // Índice de la cabeza
+    int tail;      // Índice de la cola
+    int size;      // Cantidad de mensajes actuales
+    struct spinlock lock;
+} msg_queue;
 
-Please send errors and suggestions to Frans Kaashoek and Robert Morris
-(kaashoek,rtm@mit.edu).  The main purpose of xv6 is as a teaching
-operating system for MIT's 6.1810, so we are more interested in
-simplifications and clarifications than new features.
+msg_queue mqueue;  // Cola de mensajes global
 
-BUILDING AND RUNNING XV6
+LINEA 42
+// Inicializacion de cola de mensajes
+void init_mqueue(void) {
+    initlock(&mqueue.lock, "msg_queue");  // spinlock
+    mqueue.head = 0;  
+    mqueue.tail = 0;  
+    mqueue.size = 0;  
+}
 
-You will need a RISC-V "newlib" tool chain from
-https://github.com/riscv/riscv-gnu-toolchain, and qemu compiled for
-riscv64-softmmu.  Once they are installed, and in your shell
-search path, you can run "make qemu".
+LINEA 76
+  // Inicializar la cola de mensajes
+  init_mqueue();
+
+## Implementar sys_send
+
+creamos la llamada al sistema en sysproc.c (linea 95)
+
+uint64 
+sys_send(void) {
+    int dest_pid;
+    char content[128];  // Definir un buffer para el contenido del mensaje
+
+    // Obtener los argumentos: dest_pid (int) y content (char*)
+    if (argint(0, &dest_pid) < 0 || argstr(1, content, sizeof(content)) < 0)
+        return -1;
+
+    // Asegúrate de que la cola de mensajes no esté llena antes de enviar
+    acquire(&mqueue.lock);
+    if (mqueue.size >= MSG_QUEUE_SIZE) {
+        release(&mqueue.lock);
+        return -1;  // La cola está llena
+    }
+
+    // Insertar el mensaje en la cola
+    mqueue.messages[mqueue.tail].sender_pid = myproc()->pid;
+    strncpy(mqueue.messages[mqueue.tail].content, content, sizeof(content));
+    mqueue.tail = (mqueue.tail + 1) % MSG_QUEUE_SIZE;  // Actualizar la cola circular
+    mqueue.size++;
+    release(&mqueue.lock);
+    
+    return 0;  // Enviado exitosamente
+}
+
+y declaramos int receive_message(char *content); para evitar errores de declaraciones implicitas
+
+como tambien debemos incluir #include "user.h" para que argptr funcione correctamente
+
+## E implementamos sys_receive
+
+Dentro del mismo archivo sysproc.c (linea 115)
+
+uint64 
+sys_receive(void) {
+    message *msg;
+    
+    // Obtener el argumento: un puntero al buffer de mensaje
+    if (argptr(0, (void *)&msg, sizeof(*msg)) < 0)
+        return -1;
+
+    // Asegúrate de que la cola de mensajes no esté vacía
+    acquire(&mqueue.lock);
+    if (mqueue.size == 0) {
+        release(&mqueue.lock);
+        return -1;  // No hay mensajes
+    }
+
+    // Recibir el mensaje de la cola
+    *msg = mqueue.messages[mqueue.head];
+    mqueue.head = (mqueue.head + 1) % MSG_QUEUE_SIZE;  // Actualizar la cola circular
+    mqueue.size--;
+    release(&mqueue.lock);
+
+    return 0;  // Mensaje recibido exitosamente
+}
+
+## Agregamos la declaracion del prototipo
+
+en codigo defs.h (linea 12)
+// Declaración del prototipo de send_message
+int send_message(int dest_pid, char *content);
+
+y del prototipo de receive
+int receive_message(char *content);
+
+## Volvemos a declarar y agregar la llamada
+
+en codigo syscall.c:
+
+extern uint64 sys_send(void);
+
+[SYS_send]    sys_send,
+
+y en codigo syscall.h:
+
+#define SYS_send    22
+
+## Sincronizar spinlock
+
+en el codigo implementado de sys_send y sys_receive ya se utiliza spinlock para garantizar la sincronizacion
+
+## Por ultimo creamos el programa de prueba ipc_test.c
+
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+
+int main() {
+    if (fork() == 0) {
+        // Proceso escritor
+        for (int i = 0; i < 5; i++) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "Mensaje %d", i);
+            if (send(getpid(), msg) < 0) {
+                printf("Error enviando mensaje %d\n", i);
+            }
+            sleep(10);  // Simula actividad
+        }
+        exit(0);
+    } else {
+        // Proceso lector
+        for (int i = 0; i < 5; i++) {
+            message msg;
+            if (receive(&msg) == 0) {
+                printf("Recibido: %s (de PID %d)\n", msg.content, msg.sender_pid);
+            } else {
+                printf("Error recibiendo mensaje\n");
+            }
+        }
+        wait(0);
+    }
+    exit(0);
+}
+
+y terminamos añadiendolo a uprogs del makefile.
+
+## Solucion de errores 
+
+### Definición de la estructura msg_queue y MSG_QUEUE_SIZE
+
+por lo que se debia agregar al final de proc.h 
+
+// Definir el tamaño máximo de la cola de mensajes
+#define MSG_QUEUE_SIZE 64  
+
+// Estructura para un mensaje
+typedef struct message {
+    int sender_pid;        
+    char content[128];     
+} message;
+
+// Estructura para la cola de mensajes
+typedef struct msg_queue {
+    message messages[MSG_QUEUE_SIZE];  
+    int head;
+    int tail;
+    int size;
+    struct spinlock lock;
+} msg_queue;
+
+extern msg_queue mqueue;  // Declaración externa de la cola de mensajes
+
+### Inicialización de la cola de mensajes en proc.c
+
+incluir en cabecera de proc.h
+#include "proc.h"
+
+definir la funcion 
+// Inicializa la cola de mensajes
+void init_mqueue(void) {
+    initlock(&mqueue.lock, "msg_queue");
+    mqueue.head = 0;
+    mqueue.tail = 0;
+    mqueue.size = 0;
+}
+
+y declarar la cola de mensajes globalmente
+msg_queue mqueue;  
+

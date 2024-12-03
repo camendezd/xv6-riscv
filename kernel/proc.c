@@ -5,6 +5,22 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "proc.h"
+
+msg_queue mqueue;  // Declaración global de la cola de mensajes
+
+// Cola de mensajes global (paso 2)
+#define MSG_QUEUE_SIZE 64
+
+typedef struct msg_queue {
+    message messages[MSG_QUEUE_SIZE];
+    int head;      // Índice de la cabeza
+    int tail;      // Índice de la cola
+    int size;      // Cantidad de mensajes actuales
+    struct spinlock lock;
+} msg_queue;
+
+msg_queue mqueue;  // Cola de mensajes global
 
 struct cpu cpus[NCPU];
 
@@ -25,6 +41,14 @@ extern char trampoline[]; // trampoline.S
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
+
+// Inicializa la cola de mensajes
+void init_mqueue(void) {
+    initlock(&mqueue.lock, "msg_queue");  // Inicializa el spinlock de la cola de mensajes
+    mqueue.head = 0;  // Establece la cabeza en la posición inicial
+    mqueue.tail = 0;  // Establece la cola vacía
+    mqueue.size = 0;  // Tamaño inicial de la cola es 0
+}
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -51,6 +75,10 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+
+  // Inicializar la cola de mensajes
+  init_mqueue();
+
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
